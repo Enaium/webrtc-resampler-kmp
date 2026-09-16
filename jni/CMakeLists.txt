@@ -88,15 +88,19 @@ if(EFFECTIVE_ARCH MATCHES "x86_64|AMD64|amd64|x86|i686")
         set_source_files_properties(${RESAMPLER_SSE_SRC} PROPERTIES COMPILE_OPTIONS "-msse2")
     endif()
 
-    # WebRTC enables the AVX2 runtime dispatch for Clang builds only.
-    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-        target_compile_definitions(webrtc_resampler PRIVATE WEBRTC_ENABLE_AVX2)
-        list(APPEND RESAMPLER_SRC ${RESAMPLER_AVX2_SRC})
-        if(MSVC)
-            set_source_files_properties(${RESAMPLER_AVX2_SRC} PROPERTIES COMPILE_OPTIONS "/arch:AVX2")
-        else()
-            set_source_files_properties(${RESAMPLER_AVX2_SRC} PROPERTIES COMPILE_OPTIONS "-mavx2;-mfma")
-        endif()
+    # WebRTC enables the AVX2 runtime dispatch for Clang builds, but the
+    # dispatch in sinc_resampler.cc is guarded by WEBRTC_ARCH_X86_FAMILY alone:
+    # every x86 build refers to Convolve_AVX2, so the unit has to be compiled
+    # for GCC (MinGW, Linux) and MSVC too - leaving it out is an undefined
+    # reference, not a slower build. The kernel is only reached when
+    # cpu_info::Supports() reports AVX2 and FMA3 at run time, so an older CPU
+    # runs the SSE2 or C path.
+    target_compile_definitions(webrtc_resampler PRIVATE WEBRTC_ENABLE_AVX2)
+    list(APPEND RESAMPLER_SRC ${RESAMPLER_AVX2_SRC})
+    if(MSVC)
+        set_source_files_properties(${RESAMPLER_AVX2_SRC} PROPERTIES COMPILE_OPTIONS "/arch:AVX2")
+    else()
+        set_source_files_properties(${RESAMPLER_AVX2_SRC} PROPERTIES COMPILE_OPTIONS "-mavx2;-mfma")
     endif()
 elseif(EFFECTIVE_ARCH MATCHES "aarch64|arm64|ARM64|arm|ARM")
     target_compile_definitions(webrtc_resampler PRIVATE WEBRTC_HAS_NEON)
@@ -117,6 +121,16 @@ target_include_directories(webrtc_resampler PUBLIC
 )
 
 set_target_properties(webrtc_resampler PROPERTIES LINKER_LANGUAGE CXX)
+
+# The extracted WebRTC headers are not self contained about <cstring> and
+# <cstdint>; force-include them so the library compiles with libstdc++ 13+ as
+# well (see the header for what is missing and where). MSVC spells the flag
+# differently and, with the bundled STL, does not need it.
+if(NOT MSVC)
+    target_compile_options(webrtc_resampler PRIVATE
+        -include ${C_API_DIR}/webrtc_resampler_compat.h
+    )
+endif()
 
 # =========================================================================
 # JNI shared library
