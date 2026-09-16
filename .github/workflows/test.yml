@@ -3,6 +3,9 @@ name: Test
 "on":
   workflow_dispatch:
 
+# Trigger: run manually from the Actions tab (the workflow is dispatch only, so
+# nothing runs on a push).
+#
 # Publishes every artifact to the local Maven repository and runs the test
 # suites for each platform. Each matrix entry covers the artifacts that its
 # runner can build:
