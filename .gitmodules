@@ -1,0 +1,3 @@
+[submodule "webrtc-resampler"]
+	path = webrtc-resampler
+	url = git@github.com:Enaium/webrtc-resampler.git

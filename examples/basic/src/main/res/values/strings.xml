@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Resampler Basic</string>
+
+    <string name="title">WebRTC Resampler Loopback</string>
+    <string name="description">Records 10 ms blocks of the microphone at 48 kHz, resamples every block, and plays the result back live.</string>
+
+    <string name="engine">Engine</string>
+    <string name="engine_fixed">Fixed rates</string>
+    <string name="engine_arbitrary">Arbitrary ratio</string>
+    <string name="engine_note_fixed">webrtc::Resampler: 48 kHz to the fixed WebRTC rate pairs only, 44.1 kHz is rejected.</string>
+    <string name="engine_note_arbitrary">webrtc::PushSincResampler: any ratio, for example 48 kHz to 44.1 kHz.</string>
+
+    <string name="output_rate">Output rate</string>
+    <string name="rate_8000">8 kHz</string>
+    <string name="rate_16000">16 kHz</string>
+    <string name="rate_32000">32 kHz</string>
+    <string name="rate_44100">44.1 kHz</string>
+    <string name="rate_48000">48 kHz</string>
+
+    <string name="conversion">%1$s to %2$s, %3$d to %4$d samples per channel in a 10 ms block</string>
+    <string name="samples_in">Samples in: %1$d</string>
+    <string name="samples_out">Samples out: %1$d</string>
+    <string name="show_statistics">Statistics</string>
+    <string name="hide_statistics">Hide statistics</string>
+    <string name="input_level">Input RMS: %1$s dBFS</string>
+    <string name="output_level">Output RMS: %1$s dBFS</string>
+    <string name="wall_time">Wall time: %1$d ms</string>
+    <string name="audio_time">Audio time: %1$d ms</string>
+    <string name="drift">Drift: %1$d ms</string>
+    <string name="level_silence">-inf</string>
+
+    <string name="start">Start</string>
+    <string name="stop">Stop</string>
+    <string name="error">Error: %1$s</string>
+    <string name="permission_denied">Microphone permission denied, the loopback cannot record.</string>
+</resources>

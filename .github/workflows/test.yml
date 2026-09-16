@@ -1,0 +1,263 @@
+name: Test
+
+"on":
+  workflow_dispatch:
+
+# Publishes every artifact to the local Maven repository and runs the test
+# suites for each platform. Each matrix entry covers the artifacts that its
+# runner can build:
+#
+#   macOS ARM64    -> :resampler (multiplatform module), darwin JNI,
+#                     JVM + native tests, the waveform example (headless run)
+#   Linux x64      -> linux JNI (x86_64 + aarch64 cross), JVM tests
+#   Windows x64    -> windows JNI (MinGW), JVM tests
+#   Android        -> assemble the basic example APK, verify embedded static
+#                     libraries for the androidNative targets
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-macos:
+    name: Test macOS ARM64
+    runs-on: macos-14
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Configure JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Decode signing key
+        run: |
+          echo "${{ secrets.SIGNING_KEY }}" | tr -d ' \n' | base64 -d > "$RUNNER_TEMP/signing-key.gpg"
+          ls -la "$RUNNER_TEMP/signing-key.gpg"
+          head -c 16 "$RUNNER_TEMP/signing-key.gpg" | od -c | head -2
+
+      - name: Publish all platforms to Maven Local
+        run: >
+          ./gradlew --no-daemon --stacktrace
+          -Psigning.keyId="${{ secrets.SIGNING_KEY_ID }}"
+          -Psigning.secretKeyRingFile="${{ runner.temp }}/signing-key.gpg"
+          -Psigning.password="${{ secrets.SIGNING_PASSWORD }}"
+          :resampler:publishToMavenLocal
+          :jni-jvm-darwin-aarch64:publishToMavenLocal
+          :jni-jvm-darwin-x86_64:publishToMavenLocal
+
+      - name: Run JVM tests
+        run: ./gradlew --no-daemon :resampler:jvmTest
+
+      - name: Run native tests
+        run: ./gradlew --no-daemon :resampler:macosArm64Test
+
+      - name: Build the waveform example
+        # The example needs a display and audio devices, which the runners do
+        # not have, so the JVM classes plus the full native executable are
+        # linked here: that is what proves the cinterop static library linkage
+        # and the entry point.
+        run: >
+          ./gradlew --no-daemon
+          :examples:waveform:compileKotlinJvm
+          :examples:waveform:linkDebugExecutableMacosArm64
+
+      - name: Smoke run the waveform example (headless)
+        # SDL's dummy video driver keeps the window off-screen and the example
+        # renders a bounded number of frames before exiting. Runners have no
+        # audio device, which the pipeline reports and continues past.
+        run: >
+          SDL_VIDEO_DRIVER=dummy ./gradlew --no-daemon
+          :examples:waveform:jvmRun --args="--frames 120"
+
+  test-linux:
+    name: Test Linux x64
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Configure JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Install cross-compilers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
+            gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Decode signing key
+        run: |
+          echo "${{ secrets.SIGNING_KEY }}" | tr -d ' \n' | base64 -d > "$RUNNER_TEMP/signing-key.gpg"
+          ls -la "$RUNNER_TEMP/signing-key.gpg"
+          head -c 16 "$RUNNER_TEMP/signing-key.gpg" | od -c | head -2
+
+      - name: Publish resampler linuxX64/mingwX64 + linux JNI to Maven Local
+        run: >
+          ./gradlew --no-daemon --stacktrace
+          -Psigning.keyId="${{ secrets.SIGNING_KEY_ID }}"
+          -Psigning.secretKeyRingFile="${{ runner.temp }}/signing-key.gpg"
+          -Psigning.password="${{ secrets.SIGNING_PASSWORD }}"
+          :resampler:publishLinuxX64PublicationToMavenLocal
+          :resampler:publishMingwX64PublicationToMavenLocal
+          :jni-jvm-linux-x86_64:publishToMavenLocal
+          :jni-jvm-linux-aarch64:publishToMavenLocal
+
+      - name: Run JVM tests
+        run: ./gradlew --no-daemon :resampler:jvmTest
+
+      - name: Compile native klibs (linuxX64, mingwX64)
+        # Compiling the klibs validates that cinterop embeds the static
+        # libraries built on this host (linuxX64 natively, mingwX64 via MinGW).
+        run: >
+          ./gradlew --no-daemon
+          :resampler:compileKotlinLinuxX64
+          :resampler:compileKotlinMingwX64
+
+      - name: Compile the waveform example (linuxX64, mingwX64)
+        run: >
+          ./gradlew --no-daemon
+          :examples:waveform:compileKotlinLinuxX64
+          :examples:waveform:compileKotlinMingwX64
+
+      - name: Verify embedded static libraries
+        run: |
+          for t in linuxX64 mingwX64; do
+            klib=$(find resampler/build -name "*${t}Cinterop-webrtcResampler*.klib" | grep -v asc | head -1)
+            echo "=== $t: $klib ==="
+            if unzip -l "$klib" | grep -q "\.a$"; then
+              echo "OK: static library embedded"
+            else
+              echo "FAIL: no static library in $t klib"
+              exit 1
+            fi
+          done
+
+  test-windows:
+    name: Test Windows x64
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Configure JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Install MinGW
+        shell: pwsh
+        run: |
+          choco install mingw -y --no-progress
+          # The JVM needs MinGW's runtime DLLs (libwinpthread-1.dll,
+          # libgcc_s_seh-1.dll) on PATH to load the JNI DLL.
+          echo "C:\ProgramData\chocolatey\lib\mingw\tools\install\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Decode signing key
+        shell: pwsh
+        run: |
+          [IO.File]::WriteAllBytes(
+            "$env:RUNNER_TEMP\signing-key.gpg",
+            [Convert]::FromBase64String("${{ secrets.SIGNING_KEY }}")
+          )
+          Get-Item "$env:RUNNER_TEMP\signing-key.gpg" | Select-Object Length
+
+      - name: Publish windows JNI to Maven Local
+        shell: cmd
+        run: >
+          ./gradlew --no-daemon --stacktrace
+          -Psigning.keyId="${{ secrets.SIGNING_KEY_ID }}"
+          -Psigning.secretKeyRingFile="${{ runner.temp }}\signing-key.gpg"
+          -Psigning.password="${{ secrets.SIGNING_PASSWORD }}"
+          :jni-jvm-windows-x86_64:publishToMavenLocal
+
+      - name: Run JVM tests
+        run: ./gradlew --no-daemon --stacktrace :resampler:jvmTest
+
+      - name: Compile native klib (mingwX64)
+        run: ./gradlew --no-daemon :resampler:compileKotlinMingwX64
+
+  test-android:
+    name: Test Android
+    # GitHub-hosted runners don't support nested virtualization, so Android
+    # emulators can't boot with hardware acceleration. The example APK is
+    # assembled here; running it needs a local device.
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Configure JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Decode signing key
+        run: |
+          echo "${{ secrets.SIGNING_KEY }}" | tr -d ' \n' | base64 -d > "$RUNNER_TEMP/signing-key.gpg"
+          ls -la "$RUNNER_TEMP/signing-key.gpg"
+
+      - name: Publish android AAR + metadata to Maven Local
+        # Only the metadata + android publications: the Apple and androidNative
+        # target klibs are published by the jobs whose runners can build their
+        # static libraries.
+        run: >
+          ./gradlew --no-daemon --stacktrace
+          -Psigning.keyId="${{ secrets.SIGNING_KEY_ID }}"
+          -Psigning.secretKeyRingFile="${{ runner.temp }}/signing-key.gpg"
+          -Psigning.password="${{ secrets.SIGNING_PASSWORD }}"
+          :resampler:publishKotlinMultiplatformPublicationToMavenLocal
+          :resampler:publishAndroidPublicationToMavenLocal
+
+      - name: Assemble the basic example APK
+        # The AAR carries the JNI library for all four ABIs, which the NDK
+        # cross-compiles on this runner.
+        run: ./gradlew --no-daemon :examples:basic:assembleDebug
+
+      - name: Verify embedded static libraries (androidNative)
+        # Compiling the androidNative targets cross-compiles libwebrtc_resampler.a
+        # with the NDK and embeds it into each cinterop klib (the same klibs the
+        # publish job ships). Android native cinterop output stays unpacked, so
+        # the archive is checked where the linker finds it.
+        run: |
+          ./gradlew --no-daemon \
+            :resampler:compileKotlinAndroidNativeArm64 \
+            :resampler:compileKotlinAndroidNativeArm32 \
+            :resampler:compileKotlinAndroidNativeX64 \
+            :resampler:compileKotlinAndroidNativeX86
+          for t in androidNativeArm64 androidNativeArm32 androidNativeX64 androidNativeX86; do
+            lib=$(find "resampler/build/classes/kotlin/$t" -name libwebrtc_resampler.a | head -1)
+            echo "=== $t: $lib ==="
+            if [ -z "$lib" ]; then
+              echo "FAIL: no static library in the $t cinterop klib"
+              exit 1
+            fi
+            echo "OK: static library embedded ($(du -h "$lib" | cut -f1))"
+          done
