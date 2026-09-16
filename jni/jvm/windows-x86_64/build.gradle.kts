@@ -62,8 +62,8 @@ val configureJniLibrary by tasks.registering(Exec::class) {
         "-DJNI_INCLUDE_DIR=$jniInclude",
         "-DJNI_INCLUDE_DIR_PLATFORM=$jniInclude/win32",
         // DLLs are RUNTIME outputs in CMake, not LIBRARY outputs.
-        "-DCMAKE_RUNTIME_OUTPUT_DIRECTORY=${{outDir.absolutePath}}",
-        "-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=${{outDir.absolutePath}}",
+        "-DCMAKE_RUNTIME_OUTPUT_DIRECTORY=${outDir.absolutePath}",
+        "-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=${outDir.absolutePath}",
         // Statically link the MinGW runtime so the DLL has no dependency on
         // libstdc++-6.dll / libgcc_s_seh-1.dll, which are not on the JVM's
         // PATH. (-static-libwinpthread is not supported by all MinGW builds;

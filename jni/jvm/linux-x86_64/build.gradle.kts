@@ -55,7 +55,7 @@ val configureJniLibrary by tasks.registering(Exec::class) {
         "-DCMAKE_BUILD_TYPE=Release",
         "-DJNI_INCLUDE_DIR=$jniInclude",
         "-DJNI_INCLUDE_DIR_PLATFORM=$jniInclude/linux",
-        "-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=${{outDir.absolutePath}}",
+        "-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=${outDir.absolutePath}",
     )
 }
 
