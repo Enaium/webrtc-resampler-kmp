@@ -2,6 +2,11 @@
 
 ![](https://img.cdn1.vip/i/6aaaa946e13f4_1789569350.webp)
 
+[![Maven Central](https://img.shields.io/maven-central/v/cn.enaium.webrtc.resampler/webrtc-resampler-kmp?label=Maven%20Central)](https://central.sonatype.com/artifact/cn.enaium.webrtc.resampler/webrtc-resampler-kmp)
+[![License](https://img.shields.io/github/license/Enaium/webrtc-resampler-kmp)](https://github.com/Enaium/webrtc-resampler-kmp/blob/main/LICENSE)
+[![GitHub Actions](https://img.shields.io/github/actions/workflow/status/Enaium/webrtc-resampler-kmp/test.yml?label=test)](https://github.com/Enaium/webrtc-resampler-kmp/actions/workflows/test.yml)
+[![GitHub Repo stars](https://img.shields.io/github/stars/Enaium/webrtc-resampler-kmp?style=social)](https://github.com/Enaium/webrtc-resampler-kmp)
+
 Kotlin Multiplatform bindings for the [WebRTC resampler](https://github.com/Enaium/webrtc-resampler) — the resampler extracted from WebRTC's `common_audio/resampler`, with its signal processing subset. It covers both the integer multi-rate resampler (`webrtc::Resampler`) and the high quality windowed sinc resamplers (`webrtc::SincResampler`, `webrtc::PushSincResampler`, `webrtc::PushResampler<T>`) that handle arbitrary ratios such as 44.1 kHz ⟷ 48 kHz.
 
 ## Supported Platforms
