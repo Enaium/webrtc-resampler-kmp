@@ -137,6 +137,12 @@ jobs:
         # mingwX64 static library against the bundled MinGW sysroot.
         run: ./gradlew --no-daemon :resampler:linkDebugTestMingwX64
 
+      - name: Link the waveform example (mingwX64)
+        # The example links audio-io-kmp's WASAPI bindings, whose GUIDs no
+        # import library of that sysroot defines; this module compiles the
+        # definitions into the link, and this step is what proves it.
+        run: ./gradlew --no-daemon :examples:waveform:linkDebugExecutableMingwX64
+
       - name: Compile native klibs (linuxX64, mingwX64)
         # Compiling the klibs validates that cinterop embeds the static
         # libraries built on this host (linuxX64 natively, mingwX64 via MinGW).
