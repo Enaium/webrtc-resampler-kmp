@@ -148,7 +148,19 @@ kotlin {
         compilations.getByName("main") {
             cinterops {
                 create("webrtcResampler") {
-                    defFile(project.file("src/nativeInterop/cinterop/webrtc_resampler.def"))
+                    // rtc_base/time_utils.cc calls timeGetTime on Windows, which
+                    // lives in winmm; the def file records the option so that it
+                    // travels with the published klib and the consumer's link
+                    // finds it without extra configuration.
+                    defFile(
+                        project.file(
+                            if (targetName == "mingwX64") {
+                                "src/nativeInterop/cinterop/webrtc_resampler_mingw.def"
+                            } else {
+                                "src/nativeInterop/cinterop/webrtc_resampler.def"
+                            },
+                        ),
+                    )
                     includeDirs(
                         project.file("src/nativeInterop/cinterop"),
                         rootProject.file("jni/c_api"),

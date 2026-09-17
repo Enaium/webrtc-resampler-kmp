@@ -1,0 +1,3 @@
+headers = webrtc_resampler_c.h cinterop_helpers.h
+compilerOpts = -std=c11
+linkerOpts = -lwinmm
