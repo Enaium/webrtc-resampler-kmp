@@ -122,6 +122,23 @@ target_include_directories(webrtc_resampler PUBLIC
 
 set_target_properties(webrtc_resampler PROPERTIES LINKER_LANGUAGE CXX)
 
+# Kotlin/Native links its Linux and Windows (mingwX64) binaries against the
+# libstdc++ 6.0.25 that ships in its bundled gcc-8.3 target toolchain. That
+# library predates std::__cxx11::basic_string::_M_replace_cold (a GCC 9
+# addition that the host compiler emits for std::string append/assign here), so
+# a static library built with the default ABI leaves lld with one undefined
+# symbol: the user's program then fails to link. Building the library that gets
+# embedded into the cinterop klibs against the classic std::string ABI keeps
+# every symbol it references inside that sysroot - the same library still
+# exports the 94 old-ABI string symbols.
+#
+# Only the Kotlin/Native builds (BUILD_JNI=OFF): the JNI shared libraries link
+# the libstdc++ of the machine that runs them, and the Apple and Android native
+# targets use libc++.
+if(NOT MSVC AND NOT APPLE AND NOT ANDROID AND NOT BUILD_JNI)
+    target_compile_definitions(webrtc_resampler PRIVATE _GLIBCXX_USE_CXX11_ABI=0)
+endif()
+
 # The extracted WebRTC headers are not self contained about <cstring> and
 # <cstdint>; force-include them so the library compiles with libstdc++ 13+ as
 # well (see the header for what is missing and where). MSVC spells the flag

@@ -124,6 +124,19 @@ jobs:
       - name: Run JVM tests
         run: ./gradlew --no-daemon :resampler:jvmTest
 
+      - name: Run the native tests (linuxX64)
+        # This is the step that proves the static library embedded in the
+        # cinterop klib resolves against the libstdc++ of Kotlin/Native's
+        # bundled gcc-8.3 sysroot: compiling the klib alone does not link
+        # anything, and linking is where a missing
+        # std::__cxx11::basic_string::_M_replace_cold shows up.
+        run: ./gradlew --no-daemon :resampler:linuxX64Test
+
+      - name: Link the native test executable (mingwX64)
+        # A Windows binary cannot run here, but linking it is what checks the
+        # mingwX64 static library against the bundled MinGW sysroot.
+        run: ./gradlew --no-daemon :resampler:linkDebugTestMingwX64
+
       - name: Compile native klibs (linuxX64, mingwX64)
         # Compiling the klibs validates that cinterop embeds the static
         # libraries built on this host (linuxX64 natively, mingwX64 via MinGW).
