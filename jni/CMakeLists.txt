@@ -137,6 +137,14 @@ set_target_properties(webrtc_resampler PROPERTIES LINKER_LANGUAGE CXX)
 # targets use libc++.
 if(NOT MSVC AND NOT APPLE AND NOT ANDROID AND NOT BUILD_JNI)
     target_compile_definitions(webrtc_resampler PRIVATE _GLIBCXX_USE_CXX11_ABI=0)
+
+    # Same toolchain gap, other side of it: the classic string ABI's inline
+    # reference counting reads __libc_single_threaded, which the sysroot's
+    # glibc 2.25 predates as well. The shim defines it conservatively; see the
+    # file for what it is and why zero is the safe value.
+    if(UNIX)
+        target_sources(webrtc_resampler PRIVATE ${C_API_DIR}/webrtc_resampler_kn_compat.c)
+    endif()
 endif()
 
 # The extracted WebRTC headers are not self contained about <cstring> and
