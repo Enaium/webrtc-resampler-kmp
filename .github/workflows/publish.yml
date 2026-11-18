@@ -7,7 +7,7 @@ name: Publish
 # coordinates are immutable, so each `:jni-jvm-{classifier}` and each native
 # target klib is published from exactly one runner:
 #
-#   macos-14      -> :resampler (android/jvm/macos/ios/tvos/watchos targets)
+#   macos-15      -> :resampler (android/jvm/macos/ios/tvos/watchos targets)
 #                    :jni-jvm-darwin-aarch64, :jni-jvm-darwin-x86_64
 #   ubuntu-latest -> :resampler linuxX64 + mingwX64 targets (static libs built
 #                    here: linuxX64 natively, mingwX64 via MinGW-w64
@@ -30,7 +30,7 @@ name: Publish
 jobs:
   publish-macos:
     name: Publish macOS (multiplatform + darwin JNI)
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
