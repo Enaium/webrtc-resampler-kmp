@@ -99,7 +99,7 @@ allprojects {
     group = "cn.enaium.webrtc.resampler"
     // -rolling.<tag> marks a build of the unreleased submodule pin, here the
     // webrtc-resampler tag pRJneQThJ; released versions carry no suffix.
-    version = "1.0.1-rolling.pRJneQThJ"
+    version = "1.0.2-rolling.pRJneQThJ"
 
     // CMake-driven modules take this instead of looking `cmake` up on PATH.
     extra["cmakeExecutable"] = cmakeExecutable

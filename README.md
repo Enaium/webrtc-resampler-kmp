@@ -29,7 +29,7 @@ Kotlin Multiplatform bindings for the [WebRTC resampler](https://github.com/Enai
 **Kotlin Multiplatform / Android:**
 
 ```kotlin
-implementation("cn.enaium.webrtc.resampler:webrtc-resampler-kmp:1.0.1")
+implementation("cn.enaium.webrtc.resampler:webrtc-resampler-kmp:1.0.2-rolling.pRJneQThJ")
 ```
 
 > Built with Kotlin 2.4.10: consumers need a Kotlin 2.4+ compiler, since older ones cannot read the 2.4 metadata of the published artifacts.
