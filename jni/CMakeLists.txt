@@ -64,13 +64,22 @@ elseif(WIN32)
         # mingw-w64 libc headers resolve.
         target_include_directories(webrtc_resampler SYSTEM PRIVATE /usr/x86_64-w64-mingw32/include)
     endif()
+elseif(EMSCRIPTEN)
+    # WebAssembly has no Linux-specific syscalls - rtc_base/platform_thread_types.cc
+    # would pull in <sys/prctl.h> for WEBRTC_LINUX - and the POSIX path covers
+    # what the support layer needs (clock_gettime, pthread_self).
+    target_compile_definitions(webrtc_resampler PRIVATE WEBRTC_POSIX)
 elseif(UNIX)
     target_compile_definitions(webrtc_resampler PRIVATE WEBRTC_LINUX WEBRTC_POSIX)
 endif()
 
 # On Apple, CMAKE_SYSTEM_PROCESSOR reflects the host even when cross-compiling
 # via CMAKE_OSX_ARCHITECTURES, so derive the effective arch from it first.
-if(APPLE AND CMAKE_OSX_ARCHITECTURES)
+# Emscripten reports the host processor (x86) for a wasm32 build, which must not
+# pull the SSE/AVX2 units in: wasm has no SIMD here, the C path is used.
+if(EMSCRIPTEN)
+    set(EFFECTIVE_ARCH wasm)
+elseif(APPLE AND CMAKE_OSX_ARCHITECTURES)
     set(EFFECTIVE_ARCH ${CMAKE_OSX_ARCHITECTURES})
 else()
     set(EFFECTIVE_ARCH ${CMAKE_SYSTEM_PROCESSOR})

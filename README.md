@@ -16,6 +16,7 @@ Kotlin Multiplatform bindings for the [WebRTC resampler](https://github.com/Enai
 | **Android**    | arm64-v8a, armeabi-v7a, x86, x86_64                          | JNI (shared library via CMake)             |
 | **Android (Kotlin/Native)** | arm64-v8a, armeabi-v7a, x86, x86_64             | Kotlin/Native cinterop (static library)    |
 | **JVM**        | Linux x86_64/aarch64, macOS arm64/x86_64, Windows x86_64     | JNI (per-OS/arch JAR resource, auto-extracted by `NativeLoader`) |
+| **Web**        | wasm32 (browser, worker, Node)                               | Kotlin/Wasm + Emscripten module and JS glue from the npm package |
 | **iOS**        | arm64, x64, simulatorArm64                                   | Kotlin/Native cinterop (static library)    |
 | **macOS**      | arm64, x86_64                                                | Kotlin/Native cinterop (static library)    |
 | **Linux**      | x86_64                                                       | Kotlin/Native cinterop (static library)    |
@@ -42,6 +43,19 @@ implementation("cn.enaium.webrtc.resampler:webrtc-resampler-kmp:1.0.1")
 - `webrtc-resampler-kmp-jni-jvm-windows-x86_64`
 
 `NativeLoader` detects `os.name`/`os.arch` at runtime, extracts the matching binary from the classpath to a temp directory, and `System.load`s it. No `java.library.path` setup is required for downstream JVM consumers.
+
+**Web (wasmJs):** Kotlin/Wasm has no cinterop, so the resampler ships as an Emscripten module next to the klib. Install the npm package and initialize it before the Kotlin/Wasm module runs:
+
+```bash
+npm install @enaium/webrtc-resampler-kmp
+```
+
+```js
+import { initWebrtcResamplerKmp } from "@enaium/webrtc-resampler-kmp";
+
+await initWebrtcResamplerKmp();
+// now load and run the Kotlin/Wasm module
+```
 
 ## Which Resampler
 
@@ -178,6 +192,7 @@ The viewer is built for the JVM and as native executables; Android is covered by
 - CMake 3.16+
 - Android SDK + NDK (for Android targets)
 - Xcode command-line tools (for iOS/macOS/tvOS/watchOS targets)
+- Emscripten SDK (for the wasmJs target)
 
 ### Clone with submodules
 
@@ -199,6 +214,14 @@ cd webrtc-resampler-kmp
 ./gradlew :resampler:macosArm64Test # macOS native (cinterop)
 ```
 
+### Build the wasm module
+
+```bash
+./gradlew -Pwasm.emsdk="$HOME/emsdk" :resampler:compileKotlinWasmJs   # the klib
+./gradlew -Pwasm.emsdk="$HOME/emsdk" :resampler:assembleWasmNpm       # module + npm package
+./gradlew -Pwasm.emsdk="$HOME/emsdk" :resampler:runWasmSmoke          # Node smoke test
+```
+
 ## Project Structure
 
 ```
@@ -214,12 +237,14 @@ webrtc-resampler-kmp/
 │       └── windows-x86_64
 ├── resampler/                # Kotlin Multiplatform module
 │   ├── build.gradle.kts
+│   ├── wasm/                 # JS glue + Node smoke test for the wasmJs target
 │   └── src/
 │       ├── commonMain/       # expect declarations + common interfaces
 │       ├── commonTest/
 │       ├── jvmMain/          # JVM actual (JNI) + NativeLoader
 │       ├── androidMain/      # Android actual (JNI)
 │       ├── nativeMain/       # Native actual (cinterop)
+│       ├── wasmJsMain/       # wasmJs actual (JS glue over the Emscripten module)
 │       └── nativeInterop/cinterop/
 ├── examples/
 │   ├── basic/                # Android demo (record → resample → play)

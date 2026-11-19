@@ -16,6 +16,8 @@ name: Test
 #   Windows x64    -> windows JNI (MinGW), JVM tests
 #   Android        -> assemble the basic example APK, verify embedded static
 #                     libraries for the androidNative targets
+#   Web            -> the wasmJs klib, the Emscripten resampler module and its
+#                     npm package, and the Node smoke test over both
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -283,3 +285,50 @@ jobs:
             fi
             echo "OK: static library embedded ($(du -h "$lib" | cut -f1))"
           done
+
+  test-web:
+    name: Test Web (wasmJs)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Configure JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Install Emscripten SDK
+        run: |
+          git clone --depth 1 https://github.com/emscripten-core/emsdk.git "$HOME/emsdk"
+          "$HOME/emsdk/emsdk" install latest
+          "$HOME/emsdk/emsdk" activate latest
+          "$HOME/emsdk/emsdk" construct_env
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Build the wasmJs klib
+        run: >
+          ./gradlew --no-daemon --stacktrace
+          -Pwasm.emsdk="$HOME/emsdk"
+          :resampler:compileKotlinWasmJs
+
+      - name: Compile the resampler to WebAssembly and stage the npm package
+        run: >
+          ./gradlew --no-daemon --stacktrace
+          -Pwasm.emsdk="$HOME/emsdk"
+          :resampler:assembleWasmNpm
+
+      - name: Run the wasm smoke test (Node)
+        # The module and its glue, through the same calls the wasmJs actuals
+        # make: the sample-count arithmetic of both resamplers and a tone level
+        # each are checked here, which is what the shared JVM/native suite covers
+        # on those targets.
+        run: >
+          ./gradlew --no-daemon --stacktrace
+          -Pwasm.emsdk="$HOME/emsdk"
+          :resampler:runWasmSmoke

@@ -115,6 +115,12 @@ kotlin {
         }
     }
 
+    // ==================== WebAssembly ====================
+    // Kotlin/Wasm has no cinterop: the resampler is compiled by Emscripten into
+    // a standalone module (see the wasm section at the end of this file) that
+    // the wasmJs actuals drive through a JS glue layer.
+    wasmJs()
+
     // ==================== Native ====================
     macosArm64()
     macosX64()
@@ -222,6 +228,14 @@ kotlin {
             // NativeLoader falls back to System.loadLibrary since the .so is
             // bundled inside the AAR's jniLibs.
             kotlin.srcDir("src/jvmMain/kotlin")
+        }
+
+        getByName("wasmJsMain") {
+            dependencies {
+                // Typed arrays (Int16Array, Float32Array) used to marshal the
+                // sample buffers across the JS bridge into the module.
+                implementation(libs.kotlinx.browser)
+            }
         }
     }
 }
@@ -505,6 +519,222 @@ androidComponents {
 
 tasks.matching { it.name.startsWith("merge") && it.name.contains("JniLibFolders") }
     .configureEach { dependsOn(buildAndroidJniLibs) }
+
+// ==================== wasm: build the resampler module for the wasmJs target ====================
+// Kotlin/Wasm has no cinterop and cannot embed C libraries, so the resampler is
+// compiled to a standalone Emscripten module (webrtc_resampler_wasm.js +
+// .wasm) that the wasmJs actuals drive through a JS glue layer (see
+// wasm/webrtc_resampler_kmp_glue.js). The module and the glue ship as an npm
+// package instead of a Maven "assets" jar: web apps depend on it like any other
+// npm package and import initWebrtcResamplerKmp() before running the Kotlin/Wasm
+// module, so no asset extraction step is involved.
+//
+// The C++ build reuses jni/CMakeLists.txt (BUILD_JNI=OFF): same source list,
+// same platform defines, only the toolchain differs.
+
+fun emsdkPath(): String {
+    System.getenv("EMSDK")?.takeIf { it.isNotBlank() }?.let { return it }
+    providers.gradleProperty("wasm.emsdk").orNull?.takeIf { it.isNotBlank() }?.let { return it }
+    val home = System.getProperty("user.home")
+    listOf(File(home, "emsdk"), File(home, "sdk/emsdk"))
+        .forEach { if (it.isDirectory()) return it.absolutePath }
+    return ""
+}
+
+val wasmEmsdk = emsdkPath()
+val wasmEmxx = File(wasmEmsdk, "upstream/emscripten/em++")
+val wasmToolchain = File(wasmEmsdk, "upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake")
+val wasmDir = projectDir.resolve("wasm")
+val wasmOutput = layout.buildDirectory.dir("wasm").get().asFile
+
+// Emscripten requires Python >= 3.10; the emsdk ships its own interpreter,
+// which may not be on PATH (e.g. macOS ships Python 3.9 as /usr/bin/python3).
+fun wasmEnv(): Map<String, String> {
+    val pythonDir = File(wasmEmsdk, "python").listFiles()?.firstOrNull { it.isDirectory }
+    return if (pythonDir != null) {
+        mapOf("PATH" to "${pythonDir.absolutePath}/bin:${System.getenv("PATH")}")
+    } else {
+        emptyMap()
+    }
+}
+
+val configureWasm by tasks.registering(Exec::class) {
+    group = "build"
+    description = "cmake-configures the resampler static library for wasm."
+    onlyIf { wasmEmsdk.isNotEmpty() }
+    doFirst {
+        File(wasmOutput, "cmake").mkdirs()
+        File(wasmOutput, "lib").mkdirs()
+    }
+    workingDir = File(wasmOutput, "cmake")
+    environment(wasmEnv())
+    // A toolchain file disables the generator's normal make discovery, so the
+    // make program must be passed explicitly (emcmake does the same).
+    val makeProgram = if (hostOs.isWindows) "nmake" else "/usr/bin/make"
+    commandLine(
+        cmakeExecutable, jniDir.absolutePath,
+        "-DCMAKE_BUILD_TYPE=Release",
+        "-DCMAKE_TOOLCHAIN_FILE=${wasmToolchain.absolutePath}",
+        "-DCMAKE_MAKE_PROGRAM=$makeProgram",
+        "-DBUILD_JNI=OFF",
+        "-DCMAKE_ARCHIVE_OUTPUT_DIRECTORY=${File(wasmOutput, "lib").absolutePath}",
+    )
+}
+
+val buildWasmLib by tasks.registering(Exec::class) {
+    group = "build"
+    description = "Builds the resampler static library for wasm."
+    onlyIf { wasmEmsdk.isNotEmpty() }
+    dependsOn(configureWasm)
+    workingDir = File(wasmOutput, "cmake")
+    environment(wasmEnv())
+    commandLine(cmakeExecutable, "--build", ".", "--config", "Release")
+    inputs.dir(webrtcResamplerDir)
+    inputs.dir(rootProject.file("jni/c_api"))
+    inputs.file(rootProject.file("jni/CMakeLists.txt"))
+    outputs.file(File(wasmOutput, "lib/libwebrtc_resampler.a"))
+}
+
+val linkWasmResampler by tasks.registering(Exec::class) {
+    group = "build"
+    description = "Links the Emscripten resampler module (wasm + JS)."
+    onlyIf { wasmEmsdk.isNotEmpty() }
+    dependsOn(buildWasmLib)
+    workingDir = wasmDir
+    environment(wasmEnv())
+    doFirst {
+        wasmOutput.mkdirs()
+        commandLine(
+            wasmEmxx.absolutePath,
+            File(wasmOutput, "lib/libwebrtc_resampler.a").absolutePath,
+            "-o", File(wasmOutput, "webrtc_resampler_wasm.js").absolutePath,
+            "-sMODULARIZE=1",
+            "-sEXPORT_NAME=WebrtcResamplerModule",
+            "-sEXPORT_ES6=1",
+            // The glue needs the C API and the module's typed array views.
+            "-sEXPORTED_FUNCTIONS=" + WASM_EXPORTS.joinToString(",") { "_$it" } + ",_malloc,_free",
+            "-sEXPORTED_RUNTIME_METHODS=cwrap,UTF8ToString,lengthBytesUTF8,HEAP8,HEAP16,HEAP32,HEAPU32,HEAPF32,HEAPU8",
+            "-sALLOW_MEMORY_GROWTH=1",
+            "-sINITIAL_MEMORY=16777216",
+            // Node keeps the CI smoke test and local checks working.
+            "-sENVIRONMENT=web,worker,node",
+            // The resampler is compiled with -fexceptions; without this the
+            // runtime would abort on the first throw (std::string and friends).
+            "-sDISABLE_EXCEPTION_CATCHING=0",
+            "--no-entry",
+        )
+    }
+    inputs.dir(webrtcResamplerDir)
+    inputs.dir(rootProject.file("jni/c_api"))
+    outputs.file(File(wasmOutput, "webrtc_resampler_wasm.js"))
+    outputs.file(File(wasmOutput, "webrtc_resampler_wasm.wasm"))
+}
+
+/** C API functions the wasmJs actuals call through the glue. */
+val WASM_EXPORTS = listOf(
+    "webrtc_resampler_version",
+    "webrtc_resampler_create",
+    "webrtc_resampler_create_reset",
+    "webrtc_resampler_destroy",
+    "webrtc_resampler_reset",
+    "webrtc_resampler_reset_if_needed",
+    "webrtc_resampler_push",
+    "webrtc_resampler_push_sinc_create",
+    "webrtc_resampler_push_sinc_destroy",
+    "webrtc_resampler_push_sinc_resample_s16",
+    "webrtc_resampler_push_sinc_resample_f32",
+    "webrtc_resampler_push_sinc_algorithmic_delay_seconds",
+    "webrtc_resampler_push_s16_create",
+    "webrtc_resampler_push_s16_destroy",
+    "webrtc_resampler_push_s16_resample",
+    "webrtc_resampler_push_f32_create",
+    "webrtc_resampler_push_f32_destroy",
+    "webrtc_resampler_push_f32_resample",
+    "webrtc_resampler_sinc_kernel_size",
+)
+
+val wasmNpmDir = layout.buildDirectory.dir("npm").get().asFile
+
+val assembleWasmNpm by tasks.registering {
+    group = "build"
+    description = "Stages the @enaium/webrtc-resampler-kmp npm package in build/npm."
+    dependsOn(linkWasmResampler)
+    inputs.file(wasmDir.resolve("webrtc_resampler_kmp_glue.js"))
+    // The version comes from the Gradle version, so a bump must re-stage.
+    inputs.property("npmPackageVersion", project.version.toString())
+    inputs.file(File(wasmOutput, "webrtc_resampler_wasm.js"))
+    inputs.file(File(wasmOutput, "webrtc_resampler_wasm.wasm"))
+    outputs.dir(wasmNpmDir)
+    doLast {
+        wasmNpmDir.deleteRecursively()
+        wasmNpmDir.mkdirs()
+        wasmDir.resolve("webrtc_resampler_kmp_glue.js")
+            .copyTo(wasmNpmDir.resolve("webrtc_resampler_kmp_glue.js"), overwrite = true)
+        File(wasmOutput, "webrtc_resampler_wasm.js")
+            .copyTo(wasmNpmDir.resolve("webrtc_resampler_wasm.js"), overwrite = true)
+        File(wasmOutput, "webrtc_resampler_wasm.wasm")
+            .copyTo(wasmNpmDir.resolve("webrtc_resampler_wasm.wasm"), overwrite = true)
+        wasmNpmDir.resolve("package.json").writeText(
+            """
+            {
+              "name": "@enaium/webrtc-resampler-kmp",
+              "version": "${project.version}",
+              "description": "Emscripten-compiled WebRTC resampler module and JS glue for the webrtc-resampler-kmp wasmJs target",
+              "license": "MIT",
+              "type": "module",
+              "exports": {
+                ".": "./webrtc_resampler_kmp_glue.js",
+                "./webrtc_resampler_wasm.js": "./webrtc_resampler_wasm.js",
+                "./package.json": "./package.json"
+              },
+              "files": ["webrtc_resampler_kmp_glue.js", "webrtc_resampler_wasm.js", "webrtc_resampler_wasm.wasm"],
+              "homepage": "https://github.com/Enaium/webrtc-resampler-kmp",
+              "repository": {
+                "type": "git",
+                "url": "git+https://github.com/Enaium/webrtc-resampler-kmp.git"
+              }
+            }
+            """.trimIndent() + "\n",
+        )
+    }
+}
+
+val runWasmSmoke by tasks.registering(Exec::class) {
+    group = "verification"
+    description = "Runs the Node smoke test against the staged wasm module."
+    dependsOn(assembleWasmNpm)
+    workingDir = wasmDir
+    commandLine("node", "smoke.mjs", wasmNpmDir.absolutePath)
+}
+
+val publishWasmNpm by tasks.registering(Exec::class) {
+    group = "publishing"
+    description = "Publishes @enaium/webrtc-resampler-kmp to npm (token: npm.publish.key)."
+    dependsOn(assembleWasmNpm)
+    workingDir = wasmNpmDir
+    // The token lives in the user-level Gradle properties file
+    // (~/.gradle/gradle.properties, next to mavenCentralUsername and the
+    // signing.* entries); CI writes the same key there from a repository
+    // secret. `-Pnpm.publish.key=<token>` overrides it for one-off runs.
+    val npmKey = providers.gradleProperty("npm.publish.key")
+    doFirst {
+        val key = npmKey.orNull?.takeIf { it.isNotBlank() }
+            ?: throw GradleException(
+                "npm.publish.key is not set: add it to ~/.gradle/gradle.properties " +
+                    "or pass -Pnpm.publish.key=<token>",
+            )
+        // NODE_AUTH_TOKEN is expanded by npm through the environment, so the
+        // token never lands in the package.json/tarball; .npmrc is on npm's
+        // never-publish list anyway.
+        environment("NODE_AUTH_TOKEN", key)
+        wasmNpmDir.resolve(".npmrc").writeText(
+            "//registry.npmjs.org/:_authToken=\${NODE_AUTH_TOKEN}\n",
+        )
+    }
+    // The version carries a prerelease suffix (1.0.1-rolling.<tag>), so npm
+    // requires an explicit tag; `latest` keeps the bare package name resolved.
+    commandLine("npm", "publish", "--access", "public", "--tag", "latest")
+}
 
 // ==================== Publishing ====================
 // Version is read from VERSION_NAME in gradle.properties (or -Pversion).
