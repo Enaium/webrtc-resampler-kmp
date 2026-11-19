@@ -96,7 +96,7 @@ val PINNED_ANDROID_NDK_VERSION = "27.0.12077973"
 val androidNdkSysrootPath: String? = androidNdkSysroot()?.absolutePath
 
 allprojects {
-    group = "cn.enaium.webrtc.resampler"
+    group = "cn.enaium.webrtc"
     // -rolling.<tag> marks a build of the unreleased submodule pin, here the
     // webrtc-resampler tag pRJneQThJ; released versions carry no suffix.
     version = "1.0.2-rolling.pRJneQThJ"

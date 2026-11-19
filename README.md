@@ -2,7 +2,7 @@
 
 ![](https://img.cdn1.vip/i/6aaaa946e13f4_1789569350.webp)
 
-[![Maven Central](https://img.shields.io/maven-central/v/cn.enaium.webrtc.resampler/webrtc-resampler-kmp?label=Maven%20Central)](https://central.sonatype.com/artifact/cn.enaium.webrtc.resampler/webrtc-resampler-kmp)
+[![Maven Central](https://img.shields.io/maven-central/v/cn.enaium.webrtc/webrtc-resampler-kmp?label=Maven%20Central)](https://central.sonatype.com/artifact/cn.enaium.webrtc/webrtc-resampler-kmp)
 [![License](https://img.shields.io/github/license/Enaium/webrtc-resampler-kmp)](https://github.com/Enaium/webrtc-resampler-kmp/blob/main/LICENSE)
 [![GitHub Actions](https://img.shields.io/github/actions/workflow/status/Enaium/webrtc-resampler-kmp/test.yml?label=test)](https://github.com/Enaium/webrtc-resampler-kmp/actions/workflows/test.yml)
 [![GitHub Repo stars](https://img.shields.io/github/stars/Enaium/webrtc-resampler-kmp?style=social)](https://github.com/Enaium/webrtc-resampler-kmp)
@@ -29,7 +29,7 @@ Kotlin Multiplatform bindings for the [WebRTC resampler](https://github.com/Enai
 **Kotlin Multiplatform / Android:**
 
 ```kotlin
-implementation("cn.enaium.webrtc.resampler:webrtc-resampler-kmp:1.0.2-rolling.pRJneQThJ")
+implementation("cn.enaium.webrtc:webrtc-resampler-kmp:1.0.2-rolling.pRJneQThJ")
 ```
 
 > Built with Kotlin 2.4.10: consumers need a Kotlin 2.4+ compiler, since older ones cannot read the 2.4 metadata of the published artifacts.
