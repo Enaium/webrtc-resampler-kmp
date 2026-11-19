@@ -332,3 +332,16 @@ jobs:
           ./gradlew --no-daemon --stacktrace
           -Pwasm.emsdk="$HOME/emsdk"
           :resampler:runWasmSmoke
+
+      - name: Assemble the waveform browser app
+        # The Kotlin/Wasm executable plus index.html and the npm packages the
+        # page initializes (SDL3, Dear ImGui, Web Audio, and the resampler's own
+        # module staged by :resampler:assembleWasmNpm), in build/web.
+        run: ./gradlew --no-daemon --stacktrace :examples:waveform:copyWebAssets
+
+      - name: Run the waveform browser app headless (Node)
+        # The harness stubs the browser globals and forces SDL's dummy drivers;
+        # the run exercises the whole chain end to end - Kotlin/Wasm, the
+        # resampler module, ImGui/ImPlot and the frame loop - and stops after
+        # 120 frames.
+        run: node examples/waveform/build/web/browser-node-test.mjs

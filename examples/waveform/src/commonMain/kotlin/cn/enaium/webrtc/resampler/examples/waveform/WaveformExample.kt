@@ -30,35 +30,42 @@ import cn.enaium.webrtc.resampler.resamplerVersion
  */
 internal expect val videoInitHint: String
 
+/** Title of the example window, shared by the blocking and cooperative entries. */
+internal const val WINDOW_TITLE = "webrtc-resampler-kmp waveform"
+
 /**
- * Live resampling visualization, shared by the JVM and native entry points: a
- * source signal is generated at the input rate, pushed through one of the two
- * resamplers of the binding in 10 ms blocks, played at the output rate and
- * drawn with ImPlot next to the signal it came from.
- *
- * The scopes are sized for the longest window the UI can show at the highest
- * rate it offers, so widening the window or raising the rate needs no more than
- * a change of the controls.
- *
- * [frames] bounds the run, which is what the automated (headless) runs use.
- * Returns `false` when no window could be opened.
+ * A waveform example run: the pipeline, the window drawn over it and the
+ * console lines that report on it. Both drivers use it - the blocking one in
+ * [runWaveformExample] and the cooperative one the wasmJs entry drives from
+ * `requestAnimationFrame`.
  */
-fun runWaveformExample(frames: Int = Int.MAX_VALUE): Boolean {
-    println("webrtc-resampler-kmp waveform example (frames=$frames, webrtc-resampler ${resamplerVersion()})")
-    val displayed = ResamplerPipeline(windowSamples(MAX_WINDOW_MILLIS, MAX_SAMPLE_RATE)).use { pipeline ->
-        val window = WaveformWindow(pipeline)
-        // Generation, resampling and playback run on the pipeline's own thread;
-        // this loop only draws what it publishes.
-        pipeline.start()
-        val rendered = ImGuiSdlApp.run("webrtc-resampler-kmp waveform", frames) {
-            window.draw()
-        }
-        // What a headless run has to show for itself: the engine and rate pair
-        // it ran with, how many samples went in and came out of it, and how far
-        // the level moved between the two.
-        println("summary: ${pipeline.summary()}")
-        rendered
+internal class WaveformRun(frames: Int) : AutoCloseable {
+
+    private val pipeline = ResamplerPipeline(windowSamples(MAX_WINDOW_MILLIS, MAX_SAMPLE_RATE))
+
+    private val window = WaveformWindow(pipeline)
+
+    init {
+        println("webrtc-resampler-kmp waveform example (frames=$frames, webrtc-resampler ${resamplerVersion()})")
     }
-    println(if (displayed) "done" else "aborted")
-    return displayed
+
+    /** Starts the audio thread: generation, resampling and playback run there. */
+    fun start() = pipeline.start()
+
+    /** Advances the pipeline one display frame's worth, where there is no thread. */
+    fun pump() = pipeline.pump()
+
+    /** Draws one frame with the state the pipeline published. */
+    fun draw() = window.draw()
+
+    /**
+     * What a headless run has to show for itself: the engine and rate pair it
+     * ran with, how many samples went in and came out of it, and how far the
+     * level moved between the two.
+     */
+    fun summary(): String = pipeline.summary()
+
+    override fun close() = pipeline.close()
 }
+
+

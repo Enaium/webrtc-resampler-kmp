@@ -522,15 +522,51 @@ class ResamplerPipeline(
             // realtime factor in the UI compares like with like.
             wallNanos += elapsed
 
-            applyControls()
-            // The block is generated and published before the device is
-            // touched: opening a stream can take a moment (the platform's audio
-            // server has to be reached), and the traces should be live while it
-            // does.
-            val frames = processBlock()
-            val stream = playback()
-            if (stream != null && frames > 0) writePlayback(stream, frames)
-            pace(stream)
+            step()
+            pace(playback())
+        }
+    }
+
+    /**
+     * One turn of work, without the waiting around it.
+     *
+     * The block is generated and published before the device is touched:
+     * opening a stream can take a moment (the platform's audio server has to be
+     * reached), and the traces should be live while it does.
+     */
+    private fun step() {
+        applyControls()
+        val frames = processBlock()
+        val stream = playback()
+        if (stream != null && frames > 0) writePlayback(stream, frames)
+    }
+
+    /**
+     * Advances the pipeline without an audio thread, one call per animation
+     * frame: for each 10 ms of wall time that passed since the last call one
+     * block is produced, at most [MAX_BLOCKS_PER_PUMP] of them, so a tab that
+     * was stalled catches up over the next frames instead of freezing on one.
+     *
+     * This is the cooperative counterpart of [audioLoop], which the platforms
+     * with threads run; the wasmJs entry calls this instead, because a
+     * blocking loop would stop the browser from painting.
+     */
+    fun pump() {
+        if (closed) return
+        val now = clock.markNow()
+        val elapsed = (now - lastTick).inWholeNanoseconds
+        lastTick = now
+        if (!playing) {
+            // Same re-anchoring as the loop: a pause is not paid back in a burst.
+            nextBlockNanos = startedAt.elapsedNow().inWholeNanoseconds
+            return
+        }
+        wallNanos += elapsed
+        var budget = MAX_BLOCKS_PER_PUMP
+        while (budget-- > 0) {
+            if (startedAt.elapsedNow().inWholeNanoseconds < nextBlockNanos) return
+            nextBlockNanos += BLOCK_NANOS
+            step()
         }
     }
 
@@ -808,6 +844,12 @@ class ResamplerPipeline(
 
         /** Every block of every rate covers this many milliseconds of audio. */
         const val BLOCK_MILLIS = 10
+
+        /**
+         * Blocks one [pump] call may produce; the cooperative loop runs at the
+         * display's refresh rate and a burst has to stay shorter than a frame.
+         */
+        const val MAX_BLOCKS_PER_PUMP = 4
 
         const val BLOCK_NANOS = BLOCK_MILLIS * NANOS_PER_MILLI
 

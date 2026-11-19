@@ -182,7 +182,17 @@ A Kotlin Multiplatform app (JVM desktop, plus macOS/Linux/Windows native executa
 
 Native executables (`./examples/waveform/build/bin/<target>/<mode>Executable/waveform.kexe`) take `RESAMPLER_KMP_FRAMES` to bound a headless run.
 
-The viewer is built for the JVM and as native executables; Android is covered by [`examples/basic`](examples/basic/), which runs the binding through the AAR/JNI path.
+The browser build stages a static app in `build/web` — the Kotlin/Wasm module, `index.html`, and the npm packages the page initializes before the Kotlin module runs (SDL3, Dear ImGui, Web Audio and the resampler's own module):
+
+```bash
+./gradlew :examples:waveform:copyWebAssets
+python3 -m http.server --directory examples/waveform/build/web 8000   # then open http://localhost:8000/
+node examples/waveform/build/web/browser-node-test.mjs                # or run it headless
+```
+
+A browser cannot paint while a blocking loop runs, so the wasm entry advances the pipeline once per `requestAnimationFrame` (`ResamplerPipeline.pump`) instead of running the audio thread the other platforms use.
+
+The viewer is built for the JVM, as native executables and for the browser (wasmJs); Android is covered by [`examples/basic`](examples/basic/), which runs the binding through the AAR/JNI path.
 
 ## Building from Source
 
@@ -249,6 +259,7 @@ webrtc-resampler-kmp/
 ├── examples/
 │   ├── basic/                # Android demo (record → resample → play)
 │   └── waveform/             # KMP ImGui/ImPlot before/after viewer
+│       └── web/              # browser runner: page, npm manifest, Node harness
 ├── scripts/                  # Native build helpers
 └── .github/workflows/        # publish + test
 ```

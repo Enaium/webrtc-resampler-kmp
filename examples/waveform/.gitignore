@@ -1,0 +1,3 @@
+# npm dependencies of the browser runner (installed by :examples:waveform:npmInstall)
+web/node_modules/
+web/package-lock.json

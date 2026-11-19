@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>webrtc-resampler-kmp waveform (wasm)</title>
+    <style>
+        body {
+            margin: 0;
+            background: #121218;
+            color: #ddd;
+            font-family: system-ui, sans-serif;
+            overflow: hidden;
+        }
+        #canvas {
+            width: 100vw;
+            height: 100vh;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<script type="importmap">
+    {
+        "imports": {
+            "@enaium/sdl-kmp": "./node_modules/@enaium/sdl-kmp/sdl_kmp_glue.js",
+            "@enaium/imgui-kmp": "./node_modules/@enaium/imgui-kmp/imgui_kmp_glue.js",
+            "@enaium/webrtc-resampler-kmp": "./node_modules/@enaium/webrtc-resampler-kmp/webrtc_resampler_kmp_glue.js"
+        }
+    }
+</script>
+<!-- The Web Audio backend registers its audioIo_* globals when this script
+     loads; the page resumes it on the first click, which browsers require. -->
+<script src="./node_modules/@enaium/audio-io-kmp/audio-io-kmp-web.js"></script>
+<script type="module">
+    import { initSdlKmp } from '@enaium/sdl-kmp';
+    import { initImguiKmp } from '@enaium/imgui-kmp';
+    import { initWebrtcResamplerKmp } from '@enaium/webrtc-resampler-kmp';
+
+    const canvas = document.getElementById('canvas');
+    canvas.width = 1280;
+    canvas.height = 800;
+
+    // 1. SDL3 owns the window, the 2D renderer and the canvas.
+    await initSdlKmp({ canvas });
+    // 2. Dear ImGui + ImPlot: the module the Kotlin code builds its frames with.
+    await initImguiKmp();
+    // 3. The resampler this example is about; the Kotlin code calls into it
+    //    from the first frame on.
+    await initWebrtcResamplerKmp();
+    // 4. The Kotlin/Wasm module; its runtime auto-invokes main().
+    await import('./webrtc-resampler-kmp-examples-waveform.mjs');
+</script>
+</body>
+</html>

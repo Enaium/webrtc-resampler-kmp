@@ -72,6 +72,15 @@ kotlin {
         }
     }
 
+    // Browser target: SDL3, Dear ImGui and the Web Audio backend come from
+    // their npm packages as Emscripten modules, so the same UI source runs in a
+    // page. The entry drives the pipeline from requestAnimationFrame - see
+    // src/wasmJsMain.
+    wasmJs {
+        binaries.executable()
+        browser()
+    }
+
     // The repository disables the automatic default hierarchy template
     // (gradle.properties), so materialize it here: the JVM and native targets
     // need their shared intermediate source sets (nativeMain, appleMain, ...)
@@ -90,7 +99,63 @@ kotlin {
                 implementation(libs.audio.io.kmp)
             }
         }
+
+        // imgui-kmp publishes its SDL backends for the JVM, native and wasmJs
+        // targets but not in the common metadata, so the window and frame loop
+        // built on them live in one source directory and are compiled into each
+        // of those targets (the pattern :resampler uses for its native sources).
+        getByName("jvmMain") { kotlin.srcDir("src/sdlMain/kotlin") }
+        getByName("nativeMain") { kotlin.srcDir("src/sdlMain/kotlin") }
+        getByName("wasmJsMain") { kotlin.srcDir("src/sdlMain/kotlin") }
     }
+}
+
+// ==================== web (wasmJs) ====================
+// The browser app is a static directory instead of a webpack distribution: the
+// Kotlin/Wasm executable, the page, and the three npm packages whose Emscripten
+// modules the page initializes before the Kotlin module runs (SDL3, Dear ImGui
+// and the Web Audio backend). Serve build/web with any static file server.
+val webDir = layout.projectDirectory.dir("web")
+val webAppDir = layout.buildDirectory.dir("web").get().asFile
+val wasmExecutableDir = layout.buildDirectory.dir("compileSync/wasmJs/main/developmentExecutable/kotlin").get().asFile
+val webNodeModules = webDir.dir("node_modules")
+
+val npmInstall by tasks.registering(Exec::class) {
+    group = "build"
+    description = "Installs the browser app's npm dependencies."
+    workingDir = webDir.asFile
+    commandLine("npm", "install", "--no-audit", "--no-fund")
+    inputs.file(webDir.file("package.json"))
+    outputs.dir(webNodeModules)
+}
+
+val copyWebAssets by tasks.registering(Copy::class) {
+    group = "build"
+    description = "Stages the browser app in build/web."
+    dependsOn("compileDevelopmentExecutableKotlinWasmJs")
+    dependsOn(npmInstall)
+    // The resampler's npm package is staged by :resampler:assembleWasmNpm and
+    // installed from there through a file: dependency, so a local build does
+    // not need a published package.
+    dependsOn(project(":resampler").tasks.named("assembleWasmNpm"))
+    from(webDir.dir("static")) { include("**") }
+    from(webDir.file("browser-node-test.mjs"))
+    // One entry per package: npm installs a file: dependency as a symlink, and
+    // the canonical path is what has to be copied into the static app.
+    listOf("sdl-kmp", "imgui-kmp", "audio-io-kmp", "webrtc-resampler-kmp").forEach { name ->
+        from(provider { File(webNodeModules.asFile, "@enaium/$name").canonicalFile }) {
+            into("node_modules/@enaium/$name")
+        }
+    }
+    // The packages are installed by the task this one depends on, so the check
+    // belongs to execution rather than to graph resolution.
+    doFirst {
+        check(webNodeModules.asFile.resolve("@enaium").isDirectory) {
+            "@enaium packages are not installed; run :examples:waveform:npmInstall"
+        }
+    }
+    from(wasmExecutableDir) { include("**") }
+    into(webAppDir)
 }
 
 // The mingwX64 link takes the object the task above produces on its link line,

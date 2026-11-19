@@ -1,0 +1,12 @@
+{
+  "name": "webrtc-resampler-kmp-example-waveform-web",
+  "private": true,
+  "type": "module",
+  "description": "Browser runner for the webrtc-resampler-kmp waveform example",
+  "dependencies": {
+    "@enaium/audio-io-kmp": "1.1.0",
+    "@enaium/imgui-kmp": "1.0.17-fixed.1.93.0",
+    "@enaium/sdl-kmp": "1.0.14-fixed.3.4.18",
+    "@enaium/webrtc-resampler-kmp": "file:../../../resampler/build/npm"
+  }
+}
