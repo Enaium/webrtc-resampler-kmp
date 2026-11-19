@@ -172,6 +172,10 @@ jobs:
   publish-wasm-npm:
     name: Publish the wasm module and npm package
     runs-on: ubuntu-latest
+    # The npm token is optional: without it the publish step is skipped and the
+    # Maven klib for the same version still ships from the macos-15 job.
+    env:
+      NPM_PUBLISH_KEY: ${{ secrets.NPM_PUBLISH_KEY }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
@@ -195,11 +199,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
 
       - name: Publish @enaium/webrtc-resampler-kmp
-        # Skipped until the repository has an npm token; the Maven klib for the
-        # same version is published by the macos-15 job.
         if: env.NPM_PUBLISH_KEY != ''
-        env:
-          NPM_PUBLISH_KEY: ${{ secrets.NPM_PUBLISH_KEY }}
         run: |
           printf 'npm.publish.key=%s\n' "$NPM_PUBLISH_KEY" >> "$HOME/.gradle/gradle.properties"
           ./gradlew --no-daemon --stacktrace \
