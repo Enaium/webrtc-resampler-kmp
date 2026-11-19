@@ -6,37 +6,15 @@ plugins {
 }
 
 // ---------------------------------------------------------------------------
-// MinGW GUID definitions
+// MinGW HID import library
 //
-// audio-io-kmp's WASAPI bindings reference the MMDevice and IAudioClient GUIDs
-// and ask for -lole32 -loleaut32 -luuid -lavrt -lksuser. No import library in
-// Kotlin/Native's MinGW sysroot defines those GUIDs (libuuid.a does not carry
-// them and there is no libmmdevapi.a), so linking a mingwX64 binary stopped at
-// "undefined symbol: CLSID_MMDeviceEnumerator". The translation unit compiled
-// here defines them - <initguid.h> turns the headers' DEFINE_GUID declarations
-// into definitions, the same ones an MSVC build takes from uuid.lib - and the
-// HID functions the device lookup calls come from the sysroot's libhid.a.
+// audio-io-kmp's WASAPI device lookup calls HidD_GetHidGuid and friends but
+// asks for -lole32 -loleaut32 -luuid -lavrt -lksuser only, so the mingwX64 link
+// stops at "undefined symbol: HidD_GetHidGuid". The functions live in the
+// sysroot's libhid.a, which this link adds. (The MMDevice/IAudioClient GUIDs
+// the bindings use to need defining here; audio-io-kmp 1.1.0 ships them in its
+// own klib now, so defining them again is a duplicate symbol.)
 // ---------------------------------------------------------------------------
-
-val mingwGuidsSource = file("src/mingwX64Main/c/wasapi_guids.c")
-
-val mingwGuidsObject = layout.buildDirectory.file("mingw-guids/wasapi_guids.o")
-
-val compileMingwGuids by tasks.registering(Exec::class) {
-    group = "build"
-    description = "Compiles the Windows GUID definitions the mingwX64 link needs."
-    inputs.file(mingwGuidsSource)
-    outputs.file(mingwGuidsObject)
-    doFirst { mingwGuidsObject.get().asFile.parentFile.mkdirs() }
-    workingDir = projectDir
-    commandLine(
-        // The sysroot Kotlin/Native links mingwX64 against has no compiler of
-        // its own; this is the one the CI runner and MSYS2 install.
-        "x86_64-w64-mingw32-gcc",
-        "-c", mingwGuidsSource.relativeTo(projectDir).path,
-        "-o", mingwGuidsObject.get().asFile.absolutePath,
-    )
-}
 
 kotlin {
     jvm {
@@ -66,9 +44,9 @@ kotlin {
 
     mingwX64 {
         binaries.executable {
-            // The GUID definitions of this module and the HID import library
-            // audio-io-kmp's WASAPI device lookup needs; see the top of the file.
-            linkerOpts(mingwGuidsObject.get().asFile.absolutePath, "-lhid")
+            // The HID import library audio-io-kmp's WASAPI device lookup needs;
+            // see the top of the file.
+            linkerOpts("-lhid")
         }
     }
 
@@ -156,12 +134,6 @@ val copyWebAssets by tasks.registering(Copy::class) {
     }
     from(wasmExecutableDir) { include("**") }
     into(webAppDir)
-}
-
-// The mingwX64 link takes the object the task above produces on its link line,
-// so it has to exist first.
-listOf("linkDebugExecutableMingwX64", "linkReleaseExecutableMingwX64").forEach { taskName ->
-    tasks.matching { it.name == taskName }.configureEach { dependsOn(compileMingwGuids) }
 }
 
 // SDL3 has to own the first thread on macOS, otherwise video driver init fails
